@@ -1,28 +1,52 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+datasource db {
+  provider = "postgresql"
+  schemas = ["fileuploadservice"]
+}
+
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
 
-datasource db {
-  provider = "mysql"
+model Customer {
+  id                Int      @id @default(autoincrement())
+  customerId        String   @unique
+  firstName         String
+  lastName          String
+  company           String
+  city              String
+  country           String
+  phone1            String
+  phone2            String?
+  email             String   @unique
+  subscriptionDate  DateTime
+  website           String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([email])
+
+  @@schema("fileuploadservice")
 }
 
-
 model File {
-  id        String   @id @default(cuid())
-  filename  String
-  mimetype  String
-  size      Int      @db.Int
-  hash      String   @unique
-  storagePath String
-  uploadedAt DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  expiresAt  DateTime?
+  id           String   @id @default(cuid())
+  filename     String   @db.VarChar(255)
+  mimetype     String   @db.VarChar(100)
+  size         Int
+  hash         String   @unique @db.VarChar(128)
+  storagePath  String   @db.Text
+  uploadedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  expiresAt    DateTime?
 
   @@index([uploadedAt])
-  @@index([hash])
+
+  @@schema("fileuploadservice")
 }
 

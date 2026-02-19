@@ -26,6 +26,7 @@ export const storageConfig = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/zip",
     "application/x-rar-compressed",
+    "application/octet-stream"
   ],
 
   // Allowed file extensions
@@ -43,6 +44,7 @@ export const storageConfig = {
     "docx",
     "zip",
     "rar",
+    "dat"
   ],
 
   // Get full upload path
