@@ -1,8 +1,3 @@
-/**
- * File Routes
- * Defines all file upload endpoints
- */
-
 import { Router } from "express";
 import {
   uploadFile,
@@ -31,7 +26,6 @@ router.get("/", listFiles);
 /**
  * GET /api/files/stats
  * Get file statistics
- * Note: Must come before /:id route to avoid conflict
  */
 router.get("/stats", getFileStats);
 

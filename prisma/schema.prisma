@@ -13,7 +13,7 @@ generator client {
 
 model Customer {
   id                Int      @id @default(autoincrement())
-  customerId        String   @unique
+  customerId        String
   firstName         String
   lastName          String
   company           String
@@ -21,8 +21,8 @@ model Customer {
   country           String
   phone1            String
   phone2            String?
-  email             String   @unique
-  subscriptionDate  DateTime
+  email             String
+  subscriptionDate  DateTime? // allow null
   website           String?
 
   createdAt         DateTime @default(now())
@@ -39,7 +39,6 @@ model File {
   filename     String   @db.VarChar(255)
   mimetype     String   @db.VarChar(100)
   size         Int
-  hash         String   @unique @db.VarChar(128)
   storagePath  String   @db.Text
   uploadedAt   DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -49,4 +48,3 @@ model File {
 
   @@schema("fileuploadservice")
 }
-

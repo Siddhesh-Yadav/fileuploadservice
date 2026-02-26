@@ -20,6 +20,7 @@ export const storageConfig = {
     "image/webp",
     "application/pdf",
     "text/plain",
+    "text/csv",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/msword",
@@ -44,7 +45,8 @@ export const storageConfig = {
     "docx",
     "zip",
     "rar",
-    "dat"
+    "dat",
+    "csv"
   ],
 
   // Get full upload path

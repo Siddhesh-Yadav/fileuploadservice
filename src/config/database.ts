@@ -16,7 +16,7 @@ let prisma: PrismaClient;
 
 const clientOptions: ConstructorParameters<typeof PrismaClient>[0] = {
   adapter,
-  log: env.isDevelopment ? ["query", "error", "warn"] : ["error", "warn"],
+  log: env.isDevelopment ? [ "error", "warn"] : ["error", "warn"],
 };
 
 if (env.isDevelopment) {

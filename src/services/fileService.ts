@@ -3,6 +3,10 @@
  * Business logic for file upload operations
  */
 
+import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
+
 import { FileRepository } from "../repositories/fileRepository.js";
 import { StorageService } from "./storageService.js";
 import {
@@ -23,63 +27,24 @@ export class FileService {
   /**
    * Upload a new file
    */
-  static async uploadFile(
-    buffer: Buffer,
-    originalFilename: string,
-    mimetype: string
-  ): Promise<FileWithUrl> {
-    // Validate file
-    this.validateFile(buffer, originalFilename, mimetype);
-
-    // Generate hash for deduplication
-    const hash = generateFileHash(buffer);
-
-    // Check if file already exists
-    const existingFile = await FileRepository.findByHash(hash);
-    if (existingFile) {
-      logger.info("File already exists (duplicate detected)", {
-        hash,
-        existingId: existingFile.id,
-      });
-      return {
-        ...existingFile,
-        downloadUrl: `/api/files/${existingFile.id}/download`,
-      };
+  static async uploadFile(buffer: Buffer, originalname: string, mimetype: string) {
+    const uploadsDir = path.join(process.cwd(), "src/uploads");
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
-    // Generate safe filename
-    const safeFilename = generateSafeFilename(originalFilename);
+    // ensure a new file every upload
+    const filename = `${uuidv4()}-${originalname}`;
+    const filePath = path.join(uploadsDir, filename);
 
-    try {
-      // Save file to disk
-      const storagePath = await StorageService.saveFile(buffer, safeFilename);
+    await fs.promises.writeFile(filePath, buffer);
 
-      // Save metadata to database
-      const file = await FileRepository.create({
-        filename: originalFilename,
-        mimetype,
-        size: buffer.length,
-        hash,
-        storagePath: safeFilename, // Store only the safe filename, not full path
-      });
-
-      logger.info("File uploaded successfully", {
-        fileId: file.id,
-        filename: originalFilename,
-        size: buffer.length,
-      });
-
-      return {
-        ...file,
-        downloadUrl: `/api/files/${file.id}/download`,
-      };
-    } catch (error: any) {
-      logger.error("File upload failed", {
-        error: error.message,
-        filename: originalFilename,
-      });
-      throw error;
-    }
+    return {
+      filename,
+      storagePath: filePath,
+      mimetype,
+      size: buffer.length,
+    };
   }
 
   /**

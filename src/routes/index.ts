@@ -6,6 +6,7 @@
 import { Router } from "express";
 import filesRouter from "./files.js";
 import healthRouter from "./health.js";
+import customerRouter from "./customer.js";
 
 const router = Router();
 
@@ -19,6 +20,10 @@ router.use("/health", healthRouter);
  */
 router.use("/files", filesRouter);
 
+/**
+ * Customer routes
+ */
+router.use("/customers", customerRouter);
 /**
  * Root endpoint
  */

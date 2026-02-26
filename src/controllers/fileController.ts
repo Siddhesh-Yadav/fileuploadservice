@@ -21,7 +21,7 @@ export const uploadFile = asyncHandler(
       req.file.originalname,
       req.file.mimetype
     );
-
+    
     sendSuccessResponse(
       res,
       fileWithUrl,

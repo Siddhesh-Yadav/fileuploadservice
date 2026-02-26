@@ -25,14 +25,6 @@ export class FileRepository {
     });
   }
 
-  /**
-   * Find file by hash (for deduplication)
-   */
-  static async findByHash(hash: string): Promise<File | null> {
-    return prisma.file.findUnique({
-      where: { hash },
-    });
-  }
 
   /**
    * Get all files with pagination
