@@ -23,7 +23,7 @@ export class CustomerRepository {
   static async bulkCreate(data: CreateCustomerInput[]): Promise<BatchPayload> {
     return prisma.customer.createMany({
       data,
-      skipDuplicates: false,
+      skipDuplicates: true,
     });
   } 
   

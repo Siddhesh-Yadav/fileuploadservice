@@ -26,10 +26,7 @@ model Customer {
   website           String?
 
   createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@index([customerId])
-  @@index([email])
+  updatedAt         DateTime @default(now())@updatedAt
 
   @@schema("fileuploadservice")
 }

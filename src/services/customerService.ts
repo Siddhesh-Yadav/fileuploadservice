@@ -1,24 +1,32 @@
-import { CreateCustomerInput,Customer } from '../types/models';
-import { CustomerRepository } from '../repositories/customerRepository';
-import { parseCSV } from '@/utils/parseCSV';
-import { BatchPayload } from '@/generated/prisma/internal/prismaNamespace';
-import logger from '@/utils/logger';
-import crypto from 'crypto';
+import crypto from "crypto";
+import { parse } from "csv-parse";
+import { stringify } from "csv-stringify";
+import { Pool } from "pg";
+import { from as copyFrom } from "pg-copy-streams";
+import { Transform } from "stream";
+import { pipeline } from "stream/promises";
+import { BatchPayload } from "@/generated/prisma/internal/prismaNamespace";
+import { CreateCustomerInput, Customer } from "../types/models";
+import { CustomerRepository } from "../repositories/customerRepository";
+import { parseCSV } from "@/utils/parseCSV";
+import logger from "@/utils/logger";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 export class CustomerService {
-   /**
+  /**
    * Import customers from CSV file
-   *
    * Options:
    * - batchSize: number of records per DB batch (default 5000)
-   * - dedupe: boolean to dedupe records within the uploaded file (default false)
    */
   static async importFromCSV(
     fileContent: string,
     options?: {
       batchSize?: number;
       dedupe?: boolean;
-    }
+    },
   ): Promise<BatchPayload> {
     const batchSize = options?.batchSize ?? 5000;
     const dedupeWithinFile = options?.dedupe ?? false;
@@ -36,17 +44,27 @@ export class CustomerService {
     const customersAccumulator: CreateCustomerInput[] = [];
 
     for (const row of rows) {
-      const rawCustomerId = (row["Customer Id"] ?? row["CustomerId"] ?? "").toString().trim();
+      const rawCustomerId = (row["Customer Id"] ?? row["CustomerId"] ?? "")
+        .toString()
+        .trim();
       const emailRaw = (row["Email"] ?? "").toString().trim().toLowerCase();
-      const firstName = (row["First Name"] ?? row["firstName"] ?? "").toString().trim();
-      const lastName = (row["Last Name"] ?? row["lastName"] ?? "").toString().trim();
+      const firstName = (row["First Name"] ?? row["firstName"] ?? "")
+        .toString()
+        .trim();
+      const lastName = (row["Last Name"] ?? row["lastName"] ?? "")
+        .toString()
+        .trim();
 
-      const subDateRaw = row["Subscription Date"] ?? row["subscriptionDate"] ?? "";
+      const subDateRaw =
+        row["Subscription Date"] ?? row["subscriptionDate"] ?? "";
       const parsed = subDateRaw ? new Date(subDateRaw) : null;
-      const subscriptionDate = parsed && !isNaN(parsed.getTime()) ? parsed : null;
+      const subscriptionDate =
+        parsed && !isNaN(parsed.getTime()) ? parsed : null;
 
       const customer: CreateCustomerInput = {
-        customerId: rawCustomerId || (emailRaw ? `email:${emailRaw}` : crypto.randomUUID()),
+        customerId:
+          rawCustomerId ||
+          (emailRaw ? `email:${emailRaw}` : crypto.randomUUID()),
         firstName,
         lastName,
         company: (row["Company"] ?? "").toString().trim(),
@@ -60,7 +78,9 @@ export class CustomerService {
       };
 
       if (dedupeWithinFile) {
-        const key = rawCustomerId || (customer.email ? `email:${customer.email}` : crypto.randomUUID());
+        const key =
+          rawCustomerId ||
+          (customer.email ? `email:${customer.email}` : crypto.randomUUID());
         if (!dedupeMap.has(key)) {
           dedupeMap.set(key, customer);
           customersAccumulator.push(customer);
@@ -88,7 +108,7 @@ export class CustomerService {
       const batch = finalCustomers.slice(i, i + batchSize);
       try {
         const result = await CustomerRepository.bulkCreate(batch);
-        totalInserted += (result?.count ?? 0);
+        totalInserted += result?.count ?? 0;
       } catch (err) {
         logger.error("Bulk insert failed for a batch", { error: String(err) });
       }
@@ -104,6 +124,103 @@ export class CustomerService {
 
     return { count: totalInserted } as BatchPayload;
   }
+
+  /**
+   * Import customers from CSV stream
+   * Options:
+   * - batchSize: number of records per DB batch (default 5000)
+   */
+  static async importFromCSVStream(
+    fileStream: NodeJS.ReadableStream,
+    options?: {
+      batchSize?: number;
+    },
+  ): Promise<void> {
+    const client = await pool.connect();
+
+    try {
+      // 1. Set up the Postgres COPY Write Stream
+      // Ensure the column order matches exactly what you output in the Transform stream
+      const dbWriteStream = client.query(
+        copyFrom(`COPY "fileuploadservice"."Customer" ("customerId", "firstName", "lastName", "company", "city", "country", "phone1", "phone2", "email", "subscriptionDate", "website") FROM STDIN WITH (FORMAT csv);`),
+      );
+
+      // const now = new Date();
+      // 2. Create your Custom Transform Stream
+      const dataTransformer = new Transform({
+        // objectMode allows the stream to handle JS objects instead of just string/Buffer chunks
+        objectMode: true,
+        transform(row, encoding, callback) {
+          try {
+            // --- Your Node.js Transformation Logic Here ---
+            const rawCustomerId = (
+              row["Customer Id"] ??
+              row["CustomerId"] ??
+              ""
+            ).trim();
+            const emailRaw = (row["Email"] ?? "").trim().toLowerCase();
+            const isValidEmail = Boolean(
+              emailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw),
+            );
+
+            const normalizePhone = (p?: string) =>
+              p ? p.replace(/\D+/g, "").trim() || null : null;
+
+            const subDateRaw =
+              row["Subscription Date"] ?? row["subscriptionDate"] ?? "";
+            const parsed = subDateRaw ? new Date(subDateRaw) : null;
+            const subscriptionDate =
+              parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : null;
+
+            // The output MUST be an array matching the exact order of your COPY statement
+            const transformedRow = [
+              rawCustomerId ||
+                (emailRaw ? `email:${emailRaw}` : crypto.randomUUID()),
+              (row["First Name"] ?? "").trim(),
+              (row["Last Name"] ?? "").trim(),
+              (row["Company"] ?? "").trim(),
+              (row["City"] ?? "").trim(),
+              (row["Country"] ?? "").trim(),
+              normalizePhone(row["Phone 1"]),
+              normalizePhone(row["Phone 2"]),
+              isValidEmail ? emailRaw : null,
+              subscriptionDate,
+              row["Website"] ?? null,
+              // now,
+              // now
+            ];
+
+            // Push the transformed row to the next stream
+            callback(null, transformedRow);
+          } catch (error: unknown) {
+            // Pass any transformation errors down the pipeline
+            callback(error as Error);
+          }
+        },
+      });
+
+      // 3. Execute the Pipeline
+      // pipeline() automatically handles backpressure and cleans up all streams if one fails
+      try{
+        await pipeline(
+          fileStream,
+          parse({ columns: true, trim: true }),
+          dataTransformer,
+          stringify(), // Converts the transformed arrays back into CSV strings for Postgres
+          dbWriteStream
+        );
+
+      }finally{
+        client.release();
+      }
+      
+    } catch (error) {
+      logger.error("Error during CSV stream import", { error: String(error) });
+      throw error;
+    } 
+  }
+
+
 
   /**
    * Create a new customer
@@ -124,7 +241,7 @@ export class CustomerService {
    */
   static async findAll(
     skip: number = 0,
-    take: number = 10
+    take: number = 10,
   ): Promise<{ customers: Customer[]; total: number }> {
     return await CustomerRepository.findAll(skip, take);
   }
@@ -134,7 +251,7 @@ export class CustomerService {
    */
   static async update(
     id: number,
-    data: Partial<CreateCustomerInput>
+    data: Partial<CreateCustomerInput>,
   ): Promise<Customer | null> {
     return await CustomerRepository.update(id, data);
   }
@@ -153,4 +270,3 @@ export class CustomerService {
     return await CustomerRepository.count();
   }
 }
-// ...existing code...

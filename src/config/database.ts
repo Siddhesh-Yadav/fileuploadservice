@@ -8,6 +8,7 @@ import { env } from "./environment.js";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max : 1
 });
 
 const adapter = new PrismaPg(pool);

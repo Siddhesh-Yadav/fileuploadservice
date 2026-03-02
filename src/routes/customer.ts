@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { uploadSingleFile, handleUploadError } from "../middlewares/fileUpload.js";
-import { createCustomerNoStream } from "@/controllers/customerController.js";
+import { createCustomerNoStream , createCustomerWithStreams} from "@/controllers/customerController.js";
 /**
  * POST /api/files
  * Upload a new file
@@ -9,5 +9,6 @@ import { createCustomerNoStream } from "@/controllers/customerController.js";
 
 const router = Router();
 router.post("/no-stream", uploadSingleFile, handleUploadError, createCustomerNoStream);
+router.post("/stream", createCustomerWithStreams);
 
 export default router;
