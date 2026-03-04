@@ -3,7 +3,7 @@ import { parse } from "csv-parse";
 import { stringify } from "csv-stringify";
 import { Pool } from "pg";
 import { from as copyFrom } from "pg-copy-streams";
-import { Transform } from "stream";
+import { Transform,  } from "stream";
 import { pipeline } from "stream/promises";
 import { BatchPayload } from "@/generated/prisma/internal/prismaNamespace";
 import { CreateCustomerInput, Customer } from "../types/models";
@@ -25,11 +25,9 @@ export class CustomerService {
     fileContent: string,
     options?: {
       batchSize?: number;
-      dedupe?: boolean;
     },
   ): Promise<BatchPayload> {
     const batchSize = options?.batchSize ?? 5000;
-    const dedupeWithinFile = options?.dedupe ?? false;
 
     const rows = parseCSV(fileContent);
 
@@ -38,8 +36,6 @@ export class CustomerService {
 
     const isValidEmail = (e?: string) =>
       Boolean(e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-
-    const dedupeMap = new Map<string, CreateCustomerInput>();
 
     const customersAccumulator: CreateCustomerInput[] = [];
 
@@ -76,18 +72,8 @@ export class CustomerService {
         subscriptionDate,
         website: (row["Website"] ?? null) as string | null,
       };
+      customersAccumulator.push(customer);
 
-      if (dedupeWithinFile) {
-        const key =
-          rawCustomerId ||
-          (customer.email ? `email:${customer.email}` : crypto.randomUUID());
-        if (!dedupeMap.has(key)) {
-          dedupeMap.set(key, customer);
-          customersAccumulator.push(customer);
-        }
-      } else {
-        customersAccumulator.push(customer);
-      }
     }
 
     const enrichedCustomers: CreateCustomerInput[] = [];
@@ -119,7 +105,6 @@ export class CustomerService {
       processed: finalCustomers.length,
       inserted: totalInserted,
       batchSize,
-      dedupeWithinFile,
     });
 
     return { count: totalInserted } as BatchPayload;
@@ -128,31 +113,21 @@ export class CustomerService {
   /**
    * Import customers from CSV stream
    * Options:
-   * - batchSize: number of records per DB batch (default 5000)
    */
   static async importFromCSVStream(
     fileStream: NodeJS.ReadableStream,
-    options?: {
-      batchSize?: number;
-    },
   ): Promise<void> {
     const client = await pool.connect();
 
     try {
-      // 1. Set up the Postgres COPY Write Stream
-      // Ensure the column order matches exactly what you output in the Transform stream
       const dbWriteStream = client.query(
         copyFrom(`COPY "fileuploadservice"."Customer" ("customerId", "firstName", "lastName", "company", "city", "country", "phone1", "phone2", "email", "subscriptionDate", "website") FROM STDIN WITH (FORMAT csv);`),
       );
-
-      // const now = new Date();
-      // 2. Create your Custom Transform Stream
+      // const now = new Date().toISOString();
       const dataTransformer = new Transform({
-        // objectMode allows the stream to handle JS objects instead of just string/Buffer chunks
         objectMode: true,
         transform(row, encoding, callback) {
           try {
-            // --- Your Node.js Transformation Logic Here ---
             const rawCustomerId = (
               row["Customer Id"] ??
               row["CustomerId"] ??
@@ -172,7 +147,6 @@ export class CustomerService {
             const subscriptionDate =
               parsed && !isNaN(parsed.getTime()) ? parsed.toISOString() : null;
 
-            // The output MUST be an array matching the exact order of your COPY statement
             const transformedRow = [
               rawCustomerId ||
                 (emailRaw ? `email:${emailRaw}` : crypto.randomUUID()),
@@ -190,23 +164,19 @@ export class CustomerService {
               // now
             ];
 
-            // Push the transformed row to the next stream
             callback(null, transformedRow);
           } catch (error: unknown) {
-            // Pass any transformation errors down the pipeline
             callback(error as Error);
           }
         },
       });
 
-      // 3. Execute the Pipeline
-      // pipeline() automatically handles backpressure and cleans up all streams if one fails
       try{
         await pipeline(
           fileStream,
           parse({ columns: true, trim: true }),
           dataTransformer,
-          stringify(), // Converts the transformed arrays back into CSV strings for Postgres
+          stringify(), 
           dbWriteStream
         );
 

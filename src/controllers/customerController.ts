@@ -4,9 +4,7 @@ import { CustomerService } from "../services/customerService.js";
 import { FileService } from "../services/fileService.js";
 import { sendSuccessResponse } from "../utils/responseFormatter.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import logger from "@/utils/logger.js";
 import Busboy from "busboy";
-import { BatchPayload } from "@/generated/prisma/internal/prismaNamespace.js";
 
 /**
  * Create customers from CSV file without using streams.
@@ -29,11 +27,9 @@ export const createCustomerNoStream = asyncHandler(
     const fileBuffer = await fs.promises.readFile(fileWithUrl.storagePath);
 
     const batchSize = Number(req.query.batchSize ?? 5000);
-    const dedupeWithinFile = (req.query.dedupe === "true");
 
     const result = await CustomerService.importFromCSV(fileBuffer.toString(), {
       batchSize,
-      dedupe: dedupeWithinFile,
     });
 
     const end = performance.now();
@@ -65,14 +61,10 @@ export const createCustomerWithStreams = asyncHandler(
     let processing : Promise<void> | null = null;
 
     bb.on("file", (_fieldname: string, fileStream: NodeJS.ReadableStream) => {
-      const batchSize  = Number(req.query.batchSize ?? 5000);
-
-      processing = CustomerService.importFromCSVStream(fileStream, {
-        batchSize,
-      });
+      processing = CustomerService.importFromCSVStream(fileStream);
     });
 
-    bb.on("finish", async () => {
+    bb.on("finish",  async () => {
       if (!processing) {
         return res.status(400).json({ message: "No file uploaded" });
       }
@@ -86,7 +78,7 @@ export const createCustomerWithStreams = asyncHandler(
         'Heap Used (MB)': Math.round(used.heapUsed / 1024 / 1024),
         'RSS (Total Process RAM MB)': Math.round(used.rss / 1024 / 1024)
       });
-      sendSuccessResponse(
+      return sendSuccessResponse(
         res,
         { count: result },
         "Customers imported successfully",
